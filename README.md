@@ -9,3 +9,5 @@ Each draw has its own jackpot, list of bets, winners, and state (open/closed). T
 This project is created strictly for educational and research purposes only.  It demonstrates how to build and structure a lottery-style contract using ink! smart contracts on Substrate-based chains.
 
 Do not use this contract in any live gambling, casino, or real-money system.  The authors and contributors are not liable for any misuse, deployment, or financial loss arising from modifying or using this code in production environments.
+
+https://github.com/Xode-DAO/docs/tree/main/substrate
