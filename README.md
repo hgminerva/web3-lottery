@@ -1,10 +1,10 @@
-🎰 Multi-Draw Web3 Lottery Smart Contract (ink!)
+# Multi-Draw Web3 Lottery Smart Contract (ink!)
 
 This is an ink! smart contract written in Rust that implements a decentralized lottery system with support for multiple draws and multiple bets per draw.
 
 Each draw has its own jackpot, list of bets, winners, and state (open/closed). The contract is designed for deployment on Substrate-based blockchains (such as Xode, Aleph Zero, or Astar).
 
-⚠️ Disclaimer
+# Disclaimer
 
 This project is created strictly for educational and research purposes only.  It demonstrates how to build and structure a lottery-style contract using ink! smart contracts on Substrate-based chains.
 
