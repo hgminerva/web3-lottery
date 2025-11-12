@@ -33,30 +33,15 @@ const dailyTotalBlocks = 14400;  // e.g., 1 day in blocks
 const maximumDraws = 2;
 const maximumBets = 1000;
 
-await contract.tx
-  .setup({ storageDepositLimit, gasLimit }, 
-    startingBlock,
-    dailyTotalBlocks,
-    maximumDraws,
-    maximumBets,
-  )
-  .signAndSend(alice, result => {
-    if (result.status.isInBlock) {
-      console.log('in a block');
-    } else if (result.status.isFinalized) {
-      console.log('finalized');
-    }
-  });
-
 /// Get the lottery setup
-const { result, output } = await contract.query.getLotterySetup(alice.address, { 
+const { result, output } = await contract.query.getDraws(alice.address, { 
       gasLimit: gasLimit,
       storageDepositLimit: null,}
 );
 if (result.isOk) {
-    console.log('Current value of "getLotterySetup":', output.toHuman());
+    console.log('Current value of "getDraws":', output.toHuman());
 } else {
-    console.error('Error in getLotterySetup query:', result.asErr.toHuman());
+    console.error('Error in getDraws query:', result.asErr.toHuman());
 }
 
 process.exit(0);
