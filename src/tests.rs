@@ -1,6 +1,7 @@
 /// Imports all the definitions from the outer scope so we can use them here.
 use super::*;
-use crate::lottery::{Lottery, LotterySetup, Error, Draw};
+use crate::lottery::{Lottery, LotterySetup, Draw};
+use crate::errors::Error;
 use ink::env::test::{default_accounts, set_caller};
 
 /// We test if the default constructor does its job.

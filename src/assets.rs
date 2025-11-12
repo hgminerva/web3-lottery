@@ -1,5 +1,4 @@
 use sp_runtime::MultiAddress;
-use ink::prelude::*;
 use ink::env::DefaultEnvironment;
 
 type AccountId = <DefaultEnvironment as ink::env::Environment>::AccountId;
@@ -12,38 +11,17 @@ enum RuntimeCall {
     Assets(AssetsCall),
 }
 
-/// Defines relevant `Assets` pallet calls for vesting management.
+/// Defines relevant `Assets` pallet calls for web3 lottery.
 #[ink::scale_derive(Encode)]
 enum AssetsCall {
-    /// Freezes an account’s balance of a specific asset.
+    /// Move some assets from the sender account to another.
     ///
-    /// Used to lock tokens during the vesting period.
-    #[codec(index = 11)]
-    Freeze {
+    /// Used to transfer tokens into the recipient’s balance.
+    #[codec(index = 8)]
+    Transfer {
         #[codec(compact)]
         id: u128,
-        who: MultiAddress<AccountId, ()>,
-    },
-
-    /// Thaws a previously frozen asset balance, unlocking it for transfer.
-    ///
-    /// Called when vesting is completed.
-    #[codec(index = 12)]
-    Thaw {
-        #[codec(compact)]
-        id: u128,
-        who: MultiAddress<AccountId, ()>,
-    },
-
-    /// Transfers approved assets from an owner to another account.
-    ///
-    /// Used to transfer vested tokens into the recipient’s frozen balance.
-    #[codec(index = 25)]
-    TransferApproved {
-        #[codec(compact)]
-        id: u128,
-        owner: MultiAddress<AccountId, ()>,
-        destination: MultiAddress<AccountId, ()>,
+        target: MultiAddress<AccountId, ()>,
         #[codec(compact)]
         amount: Balance,
     },

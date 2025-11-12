@@ -1,32 +1,24 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
+/// Unit test
 #[cfg(test)]
 mod tests;
 
+/// End-to-end test
 #[cfg(all(test, feature = "e2e-tests"))]
 mod e2e_tests;
 
+/// pallet_assets runtime calls
 pub mod assets;
+
+/// Errors
+pub mod errors;
 
 #[ink::contract]
 mod lottery {
     use ink::prelude::vec::Vec;
-    
-    /// Lottery error messages
-    #[derive(scale::Encode, scale::Decode, Debug, PartialEq, Eq)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum Error {
-        AlreadyStarted,
-        StartingBlockPassed,
-        BadOrigin,
-        NoRecords,
-        TransferFailed,
-        TooManyDraws,
-        DrawNotFound,
-        DrawStillClose,
-        InvalidBetAmount,
-    }
-
+    use crate::errors::Error;
+   
     /// Lottery Setup 
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -119,6 +111,8 @@ mod lottery {
         }
 
         /// Setup the lottery
+        /// 
+        /// starting_block - determines the starting block of the 14-hour cycle.
         #[ink(message)]
         pub fn setup(&mut self, 
                      starting_block: u32,

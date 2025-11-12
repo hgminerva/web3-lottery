@@ -27,18 +27,8 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-/// Setup the lottery
-const startingBlock = 200;
-const dailyTotalBlocks = 14400;  // e.g., 1 day in blocks
-const maximumDraws = 2;
-const maximumBets = 1000;
-
 await contract.tx
-  .setup({ storageDepositLimit, gasLimit }, 
-    startingBlock,
-    dailyTotalBlocks,
-    maximumDraws,
-    maximumBets,
+  .start({ storageDepositLimit, gasLimit }
   )
   .signAndSend(alice, result => {
     if (result.status.isInBlock) {
