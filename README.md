@@ -10,5 +10,8 @@ This project is created strictly for educational and research purposes only.  It
 
 Do not use this contract in any live gambling, casino, or real-money system.  The authors and contributors are not liable for any misuse, deployment, or financial loss arising from modifying or using this code in production environments.
 
+# Links 
+
 [Documentation](https://github.com/Xode-DAO/docs/tree/main/substrate)
+
 [Examples](https://github.com/use-ink/ink-examples/blob/4766b9747674e7f9aaafb4117e0397052187e41f/erc20/lib.rs)
