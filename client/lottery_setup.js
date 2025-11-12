@@ -9,9 +9,6 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
 const ACCOUNT = process.env.ACCOUNT;
 
-const gasLimit = 3000n * 1000000n;
-const storageDepositLimit = null
-
 console.log("Connecting to blockchain...");
 const wsProvider = new WsProvider(WS_ENDPOINT);
 const api = await ApiPromise.create({ provider: wsProvider });
@@ -23,10 +20,21 @@ const contract = new ContractPromise(api, abiJSON, CONTRACT_ADDRESS);
 const keyring = new Keyring({ type: "sr25519" });
 const alice = keyring.addFromUri(ACCOUNT);
 
-console.log("Reading lottery setup");
-const { output } = await contract.query.getLotterySetup(
-    alice.address,
-    { gasLimit, storageDepositLimit }
+const gasLimit = api.registry.createType('WeightV2', {
+          refTime: 300000000000,
+          proofSize: 500000,
+});
+const storageDepositLimit = null;
+
+const { result, output } = await contract.query.getLotterySetup(alice.address, { 
+        gasLimit: gasLimit,
+        storageDepositLimit: null,}
 );
 
-console.log("Lottery setup:", output?.toHuman());
+if (result.isOk) {
+    console.log('Current value of "getLotterySetup":', output.toHuman());
+} else {
+    console.error('Error in getLotterySetup query:', result.asErr.toHuman());
+}
+
+process.exit(0);
