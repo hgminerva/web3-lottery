@@ -6,18 +6,25 @@ mod tests;
 #[cfg(all(test, feature = "e2e-tests"))]
 mod e2e_tests;
 
+pub mod assets;
+
 #[ink::contract]
 mod lottery {
-    use ink::prelude::vec::Vec; 
+    use ink::prelude::vec::Vec;
     
     /// Lottery error messages
-    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+    #[derive(scale::Encode, scale::Decode, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum LotteryError {
+    pub enum Error {
         AlreadyStarted,
         StartingBlockPassed,
         BadOrigin,
+        NoRecords,
+        TransferFailed,
         TooManyDraws,
+        DrawNotFound,
+        DrawStillClose,
+        InvalidBetAmount,
     }
 
     /// Lottery Setup 
@@ -54,7 +61,9 @@ mod lottery {
     pub struct Draw {
         pub draw_number: u32,
         pub block_interval: u16,
+        pub bet_amount: Balance,
         pub jackpot: Balance,
+        pub rebate: Balance,
         pub bets: Vec<Bet>,
         pub winning_number: u16,
         pub winners: Vec<Winner>,
@@ -65,6 +74,7 @@ mod lottery {
     #[ink(storage)]
     pub struct Lottery {
         pub operator: AccountId,
+        pub dev: AccountId,
         pub lottery_setup: LotterySetup,
         pub draws: Vec<Draw>,
     }
@@ -84,6 +94,7 @@ mod lottery {
             let caller = Self::env().caller();
             Self { 
                 operator: caller,
+                dev: caller,
                 lottery_setup: LotterySetup {
                     starting_block: starting_block,
                     daily_total_blocks: daily_total_blocks,
@@ -113,10 +124,10 @@ mod lottery {
                      starting_block: u32,
                      daily_total_blocks: u16,
                      maximum_draws: u8,
-                     maximum_bets: u16) -> Result<(), LotteryError> {
+                     maximum_bets: u16) -> Result<(), Error> {
 
             if self.env().caller() != self.operator {
-                return Err(LotteryError::BadOrigin);
+                return Err(Error::BadOrigin);
             } 
 
             self.lottery_setup.starting_block = starting_block;
@@ -129,15 +140,15 @@ mod lottery {
 
         /// Add draw
         #[ink(message)]
-        pub fn add_draw(&mut self, block_interval: u16) -> Result<(), LotteryError>  {
+        pub fn add_draw(&mut self, block_interval: u16, bet_amount: Balance) -> Result<(), Error>  {
             // Only the operator can add a draw
             if self.env().caller() != self.operator {
-                return Err(LotteryError::BadOrigin);
+                return Err(Error::BadOrigin);
             } 
 
             // Must not exceed the maximum number of draws setup in the lottery
             if self.draws.len() >= self.lottery_setup.maximum_draws.into() {
-                return Err(LotteryError::TooManyDraws);
+                return Err(Error::TooManyDraws);
             }
 
             let next_draw_number = self.draws
@@ -150,7 +161,9 @@ mod lottery {
             let new_draw = Draw {
                 draw_number: next_draw_number,
                 block_interval: block_interval,
+                bet_amount: bet_amount,
                 jackpot: 0,
+                rebate: 0,
                 bets: Vec::new(),
                 winning_number: 0,
                 winners: Vec::new(),
@@ -162,22 +175,78 @@ mod lottery {
             Ok(())
         }
 
+        #[ink(message)]
+        pub fn remove_draw(&mut self) -> Result<(), Error> {
+            // Only the operator can add a draw
+            if self.env().caller() != self.operator {
+                return Err(Error::BadOrigin);
+            } 
+
+            // No more draw record
+            if self.draws.len() == 0 {
+                return Err(Error::NoRecords);
+            }
+
+            self.draws.pop();
+
+            Ok(())
+        }
+
+        /// Add a bet in a draw
+        #[ink(message, payable)]
+        pub fn add_bet(&mut self, draw_number: u32, bet_number: u16, affiliate: AccountId) -> Result<(), Error> {
+            let caller = self.env().caller();
+            let transferred = self.env().transferred_value();
+
+            // Check the draw number exist
+            let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
+            if !draw_exists {
+                return Err(Error::DrawNotFound);
+            }
+
+            for draw in &mut self.draws {
+                if draw.draw_number == draw_number {
+                    // Check if the draw is open
+                    if !draw.is_open {
+                        return Err(Error::DrawStillClose);
+                    }
+
+                    // Check if the transferred amount is equal to the bet amount
+                    if transferred != draw.bet_amount {
+                        return Err(Error::InvalidBetAmount);
+                    }
+
+                    let jackpot_share = transferred * 50 / 100;
+                    let rebate_share = transferred * 10 / 100;
+                    let operator_share = transferred * 20 / 100;
+                    let dev_share = transferred * 10 / 100;
+                    let affiliate_share = transferred * 10 / 100;
+
+                    draw.jackpot += jackpot_share;
+
+                    draw.rebate += rebate_share;   
+                }
+            }
+
+            Ok(())
+        }        
+
 
         /// Start the lottery
         #[ink(message)]
-        pub fn start(&mut self) -> Result<(), LotteryError> {
+        pub fn start(&mut self) -> Result<(), Error> {
             let current_block: u32 = self.env().block_number();
 
             if self.env().caller() != self.operator {
-                return Err(LotteryError::BadOrigin);
+                return Err(Error::BadOrigin);
             } 
 
             if self.lottery_setup.is_started {
-                return Err(LotteryError::AlreadyStarted);
+                return Err(Error::AlreadyStarted);
             }
 
             if current_block > self.lottery_setup.starting_block {
-                return Err(LotteryError::StartingBlockPassed);
+                return Err(Error::StartingBlockPassed);
             }
 
             self.lottery_setup.is_started = true;
@@ -187,9 +256,10 @@ mod lottery {
 
         /// Stop the lottery
         #[ink(message)]
-        pub fn stop(&mut self) -> Result<(), LotteryError> {
+        pub fn stop(&mut self) -> Result<(), Error> {
+            
             if self.env().caller() != self.operator {
-                return Err(LotteryError::BadOrigin);
+                return Err(Error::BadOrigin);
             } 
 
             self.lottery_setup.is_started = false;
@@ -202,6 +272,7 @@ mod lottery {
         pub fn get_lottery_setup(&self) -> LotterySetup {
             self.lottery_setup.clone()
         }
+        
     }
 
 }

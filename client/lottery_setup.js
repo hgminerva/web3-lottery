@@ -9,6 +9,8 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
 const ACCOUNT = process.env.ACCOUNT;
 
+const gasLimit = 3000n * 1000000n;
+const storageDepositLimit = null
 
 console.log("Connecting to blockchain...");
 const wsProvider = new WsProvider(WS_ENDPOINT);
@@ -24,7 +26,7 @@ const alice = keyring.addFromUri(ACCOUNT);
 console.log("Reading lottery setup");
 const { output } = await contract.query.getLotterySetup(
     alice.address,
-    { gasLimit: -1, storageDepositLimit: null }
+    { gasLimit, storageDepositLimit }
 );
 
 console.log("Lottery setup:", output?.toHuman());
