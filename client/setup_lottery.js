@@ -28,35 +28,31 @@ const gasLimit = api.registry.createType('WeightV2', {
 const storageDepositLimit = null;
 
 /// Setup the lottery
-const startingBlock = 800;
-const dailyTotalBlocks = 14400;  // e.g., 1 day in blocks
+const startingBlock = 1000;
+const dailyTotalBlocks = 14400; 
 const maximumDraws = 2;
 const maximumBets = 1000;
 
-await contract.tx
-  .setup({ storageDepositLimit, gasLimit }, 
-    startingBlock,
-    dailyTotalBlocks,
-    maximumDraws,
-    maximumBets,
-  )
-  .signAndSend(alice, result => {
-    if (result.status.isInBlock) {
-      console.log('in a block');
-    } else if (result.status.isFinalized) {
-      console.log('finalized');
-    }
-  });
-
-/// Get the lottery setup
-const { result, output } = await contract.query.getLotterySetup(alice.address, { 
-      gasLimit: gasLimit,
-      storageDepositLimit: null,}
-);
-if (result.isOk) {
-    console.log('Current value of "getLotterySetup":', output.toHuman());
-} else {
-    console.error('Error in getLotterySetup query:', result.asErr.toHuman());
-}
+await new Promise(async (resolve, reject) => {
+  const unsub = await contract.tx
+    .setup({ storageDepositLimit, gasLimit }, 
+      startingBlock,
+      dailyTotalBlocks,
+      maximumDraws,
+      maximumBets,
+    )
+    .signAndSend(alice, ({ status, events, dispatchError }) => {
+      if(events?.length > 0) {
+        events.forEach(({ event }) => {
+            const { section, method, data } = event;
+            if (section === "system") {
+              console.log(method);
+              unsub(); 
+              resolve();          
+            }
+        });
+      }
+    });
+});
 
 process.exit(0);

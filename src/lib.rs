@@ -18,7 +18,30 @@ pub mod errors;
 mod lottery {
     use ink::prelude::vec::Vec;
     use crate::errors::Error;
-   
+
+    /// Success messages
+    #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum Success {
+        LotteryStarted,
+    }
+    
+    /// Emit messages
+    #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum LotteryStatus {
+        EmitSuccess(Success),
+        EmitError(Error),
+    }
+
+    /// Contract event emitter
+    #[ink(event)]
+    pub struct LotteryEvent {
+        #[ink(topic)]
+        operator: AccountId,
+        status: LotteryStatus,
+    } 
+
     /// Lottery Setup 
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -225,25 +248,42 @@ mod lottery {
             Ok(())
         }        
 
-
         /// Start the lottery
         #[ink(message)]
-        pub fn start(&mut self) -> Result<(), Error> {
+        pub fn start(&mut self) -> Result<(), Error>  {
             let current_block: u32 = self.env().block_number();
+            let caller = self.env().caller();
 
-            if self.env().caller() != self.operator {
+            if caller != self.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
                 return Err(Error::BadOrigin);
             } 
 
             if self.lottery_setup.is_started {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::AlreadyStarted),
+                });
                 return Err(Error::AlreadyStarted);
             }
 
             if current_block > self.lottery_setup.starting_block {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::StartingBlockPassed),
+                });
                 return Err(Error::StartingBlockPassed);
             }
 
             self.lottery_setup.is_started = true;
+
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::LotteryStarted),
+            });
 
             Ok(())
         }
@@ -265,6 +305,12 @@ mod lottery {
         #[ink(message)]
         pub fn get_lottery_setup(&self) -> LotterySetup {
             self.lottery_setup.clone()
+        }
+
+        /// Return all the draws
+        #[ink(message)]
+        pub fn get_draws(&self) -> Vec<Draw> {
+            self.draws.clone()
         }
         
     }

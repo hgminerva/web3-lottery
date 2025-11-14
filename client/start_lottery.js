@@ -27,26 +27,40 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-await contract.tx
-  .start({ storageDepositLimit, gasLimit }
-  )
-  .signAndSend(alice, result => {
-    if (result.status.isInBlock) {
-      console.log('in a block');
-    } else if (result.status.isFinalized) {
-      console.log('finalized');
-    }
-  });
-
-/// Get the lottery setup
-const { result, output } = await contract.query.getLotterySetup(alice.address, { 
-      gasLimit: gasLimit,
-      storageDepositLimit: null,}
-);
-if (result.isOk) {
-    console.log('Current value of "getLotterySetup":', output.toHuman());
-} else {
-    console.error('Error in getLotterySetup query:', result.asErr.toHuman());
-}
+await new Promise(async (resolve, reject) => {
+  const unsub = await contract.tx
+    .start({ storageDepositLimit, gasLimit })
+    .signAndSend(alice, ({ status, events, dispatchError }) => {
+      //console.log("Status:", status?.type);
+      //console.log("Events:", events?.length);
+      //console.log("DispatchError:", dispatchError);      
+      if(events?.length > 0) {
+        //console.log(events);
+        events.forEach(({ event }) => {
+           const { section, method, data } = event;
+           //console.log("EVENT:", section, method, data.toHuman());
+           if (section === "system") {
+            console.log(method);
+            /*
+            const [dispatchError, dispatchInfo] = data;
+             console.log(dispatchError.toHuman());
+            
+            if (dispatchError.isModule) {
+              const mod = dispatchError.asModule;
+              const metaError = api.registry.findMetaError(mod);
+              console.log("DECODED ERROR:", {
+                  pallet: metaError.section,
+                  error: metaError.name,
+                  docs: metaError.docs.join(' ')
+              });
+            }
+            */
+            unsub(); 
+            resolve();          
+           }
+        });
+      }
+    });
+});
 
 process.exit(0);

@@ -3,7 +3,7 @@ use scale::{Decode, Encode};
 use ink::env::Error as EnvError;
 
 /// Lottery error messages
-#[derive(scale::Encode, scale::Decode, Debug, PartialEq, Eq)]
+#[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub enum Error {
     /// Attempt to start the lottery when it is already started

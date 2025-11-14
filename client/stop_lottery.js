@@ -27,26 +27,21 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-const block_interval = 700;
-const bet_amount = 5000;  
-
 await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
-    .addDraw({ storageDepositLimit, gasLimit }, 
-      block_interval,
-      bet_amount,
-    ).signAndSend(alice, ({ status, events, dispatchError }) => {    
-        if(events?.length > 0) {
-          events.forEach(({ event }) => {
-            const { section, method, data } = event;
-            if (section === "system") {
-              console.log(method);
-              unsub(); 
-              resolve();          
-            }
-          });
-        }
-  });
+    .stop({ storageDepositLimit, gasLimit })
+    .signAndSend(alice, ({ status, events, dispatchError }) => {    
+      if(events?.length > 0) {
+        events.forEach(({ event }) => {
+           const { section, method, data } = event;
+           if (section === "system") {
+            console.log(method);
+            unsub(); 
+            resolve();          
+           }
+        });
+      }
+    });
 });
 
 process.exit(0);
