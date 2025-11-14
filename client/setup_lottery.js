@@ -31,7 +31,7 @@ const storageDepositLimit = null;
 const startingBlock = 1000;
 const dailyTotalBlocks = 14400; 
 const maximumDraws = 2;
-const maximumBets = 1000;
+const maximumBets = 5;
 
 await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
@@ -42,6 +42,7 @@ await new Promise(async (resolve, reject) => {
       maximumBets,
     )
     .signAndSend(alice, ({ status, events, dispatchError }) => {
+      console.log("Status:", status?.type);
       if(events?.length > 0) {
         events.forEach(({ event }) => {
             const { section, method, data } = event;

@@ -17,13 +17,15 @@ pub mod errors;
 #[ink::contract]
 mod lottery {
     use ink::prelude::vec::Vec;
-    use crate::errors::Error;
+    use crate::errors::{Error, RuntimeError, ContractError};
+    use crate::assets::{AssetsCall, RuntimeCall};
 
     /// Success messages
     #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Success {
         LotteryStarted,
+        BetAdded,
     }
     
     /// Emit messages
@@ -59,7 +61,9 @@ mod lottery {
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct Bet {
         pub bettor: AccountId,
+        pub upline: AccountId,
         pub bet_number: u16,
+        pub tx_hash: Vec<u8>,
     }
 
     /// Winner
@@ -76,9 +80,9 @@ mod lottery {
     pub struct Draw {
         pub draw_number: u32,
         pub block_interval: u16,
-        pub bet_amount: Balance,
-        pub jackpot: Balance,
-        pub rebate: Balance,
+        pub bet_amount: u128,
+        pub jackpot: u128,
+        pub rebate: u128,
         pub bets: Vec<Bet>,
         pub winning_number: u16,
         pub winners: Vec<Winner>,
@@ -157,7 +161,7 @@ mod lottery {
 
         /// Add draw
         #[ink(message)]
-        pub fn add_draw(&mut self, block_interval: u16, bet_amount: Balance) -> Result<(), Error>  {
+        pub fn add_draw(&mut self, block_interval: u16, bet_amount: u128) -> Result<(), Error>  {
             // Only the operator can add a draw
             if self.env().caller() != self.operator {
                 return Err(Error::BadOrigin);
@@ -192,6 +196,7 @@ mod lottery {
             Ok(())
         }
 
+        /// Remove draw
         #[ink(message)]
         pub fn remove_draw(&mut self) -> Result<(), Error> {
             // Only the operator can add a draw
@@ -209,13 +214,15 @@ mod lottery {
             Ok(())
         }
 
-        /// Add a bet in a draw
-        #[ink(message, payable)]
-        pub fn add_bet(&mut self, draw_number: u32, bet_number: u16, affiliate: AccountId) -> Result<(), Error> {
+        /// Open draw
+        #[ink(message)]
+        pub fn open_draw(&mut self, draw_number: u32) -> Result<(), Error> {
             let caller = self.env().caller();
-            let transferred = self.env().transferred_value();
 
-            // Check the draw number exist
+            if caller != self.operator {
+                return Err(Error::BadOrigin);
+            } 
+
             let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
             if !draw_exists {
                 return Err(Error::DrawNotFound);
@@ -223,27 +230,113 @@ mod lottery {
 
             for draw in &mut self.draws {
                 if draw.draw_number == draw_number {
-                    // Check if the draw is open
-                    if !draw.is_open {
-                        return Err(Error::DrawStillClose);
+                    // Check if the draw is close to open
+                    if draw.is_open {
+                        return Err(Error::DrawStillOpen);
+                    } else {
+                        draw.is_open = true;
                     }
-
-                    // Check if the transferred amount is equal to the bet amount
-                    if transferred != draw.bet_amount {
-                        return Err(Error::InvalidBetAmount);
-                    }
-
-                    let jackpot_share = transferred * 50 / 100;
-                    let rebate_share = transferred * 10 / 100;
-                    let operator_share = transferred * 20 / 100;
-                    let dev_share = transferred * 10 / 100;
-                    let affiliate_share = transferred * 10 / 100;
-
-                    draw.jackpot += jackpot_share;
-
-                    draw.rebate += rebate_share;   
                 }
             }
+            Ok(())
+        }
+
+        /// Close draw
+        #[ink(message)]
+        pub fn close_draw(&mut self, draw_number: u32) -> Result<(), Error> {
+            let caller = self.env().caller();
+
+            if caller != self.operator {
+                return Err(Error::BadOrigin);
+            } 
+
+            let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
+            if !draw_exists {
+                return Err(Error::DrawNotFound);
+            }
+
+            for draw in &mut self.draws {
+                if draw.draw_number == draw_number {
+                    // Check if the draw is open to close
+                    if draw.is_open {
+                       draw.is_open = false;
+                    } else {
+                        return Err(Error::DrawStillClose);
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        /// Add initial draw jackpot
+        #[ink(message)]
+        pub fn initial_jackpot_draw(&mut self, draw_number: u32, asset_id: u128, amount: u128) -> Result<(), ContractError> {
+            let caller = self.env().caller();
+
+            //if caller != self.operator {
+            //    return Err(ContractError::Internal(Error::BadOrigin));
+            //} 
+
+            // Get contract account before mutable borrow
+            let account = self.env().account_id();
+
+            // Find the draw mutably
+            //let draw = self.draws.iter()
+            //    .find(|d| d.draw_number == draw_number)
+            //    .ok_or(ContractError::Internal(Error::DrawNotFound))?;
+
+            //if !draw.is_open {
+            //    return Err(ContractError::Internal(Error::DrawStillClose));
+            //}
+
+            // Transfer asset from caller to contract
+            self.env()
+                .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                    id: asset_id,
+                    target: caller.into(),
+                    amount,
+                }))
+                .map_err(|_| RuntimeError::CallRuntimeFailed)?;
+
+            // Update jackpot
+            //for draw in &mut self.draws {
+            //    if draw.draw_number == draw_number {
+            //         draw.jackpot += amount;
+            //    }
+            //}
+
+            Ok(())
+        }
+
+        /// Add a bet in a draw
+        #[ink(message)]
+        pub fn add_bet(&mut self, draw_number: u32, bet_number: u16, bettor: AccountId, upline: AccountId, tx_hash: Vec<u8>) -> Result<(), Error> {
+            let caller = self.env().caller();
+
+            /// Add bet is called at the server by the operator as soon as tx_hash transfer 
+            /// of bet has been verified.
+            if caller != self.operator {
+                return Err(Error::BadOrigin);
+            } 
+
+            // Find the draw number
+            let draw = self.draws.iter_mut()
+                .find(|d| d.draw_number == draw_number)
+                .ok_or(Error::DrawNotFound)?;
+
+            // Add bet
+            let new_bet = Bet {
+                bettor: bettor,
+                upline: upline,
+                bet_number: bet_number,
+                tx_hash: tx_hash,
+            };
+            draw.bets.push(new_bet);
+
+            self.env().emit_event(LotteryEvent {
+                operator: self.operator,
+                status: LotteryStatus::EmitSuccess(Success::BetAdded),
+            });
 
             Ok(())
         }        

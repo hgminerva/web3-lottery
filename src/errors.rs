@@ -20,6 +20,8 @@ pub enum Error {
     DrawNotFound,
     /// The draw is still close
     DrawStillClose,
+    /// The draw is still open
+    DrawStillOpen,
     /// The bet must equal to the set bet amount
     InvalidBetAmount,
 }

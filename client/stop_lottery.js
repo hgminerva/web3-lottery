@@ -31,6 +31,7 @@ await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
     .stop({ storageDepositLimit, gasLimit })
     .signAndSend(alice, ({ status, events, dispatchError }) => {    
+      console.log("Status:", status?.type);
       if(events?.length > 0) {
         events.forEach(({ event }) => {
            const { section, method, data } = event;

@@ -36,16 +36,17 @@ await new Promise(async (resolve, reject) => {
       block_interval,
       bet_amount,
     ).signAndSend(alice, ({ status, events, dispatchError }) => {    
-        if(events?.length > 0) {
-          events.forEach(({ event }) => {
-            const { section, method, data } = event;
-            if (section === "system") {
-              console.log(method);
-              unsub(); 
-              resolve();          
-            }
-          });
-        }
+      console.log("Status:", status?.type);
+      if(events?.length > 0) {
+        events.forEach(({ event }) => {
+          const { section, method, data } = event;
+          if (section === "system") {
+            console.log(method);
+            unsub(); 
+            resolve();          
+          }
+        });
+      }
   });
 });
 

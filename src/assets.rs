@@ -5,7 +5,7 @@ type AccountId = <DefaultEnvironment as ink::env::Environment>::AccountId;
 type Balance = <DefaultEnvironment as ink::env::Environment>::Balance;
 
 #[ink::scale_derive(Encode)]
-enum RuntimeCall {
+pub enum RuntimeCall {
     /// Dispatches a call to the `Assets` pallet.
     #[codec(index = 50)]
     Assets(AssetsCall),
@@ -13,7 +13,7 @@ enum RuntimeCall {
 
 /// Defines relevant `Assets` pallet calls for web3 lottery.
 #[ink::scale_derive(Encode)]
-enum AssetsCall {
+pub enum AssetsCall {
     /// Move some assets from the sender account to another.
     ///
     /// Used to transfer tokens into the recipient’s balance.
