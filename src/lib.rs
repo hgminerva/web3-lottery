@@ -44,6 +44,15 @@ mod lottery {
         status: LotteryStatus,
     } 
 
+    /// Success messages
+    #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum DrawStatus {
+        Open,
+        Processing,
+        Close,
+    }
+
     /// Lottery Setup 
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -106,6 +115,7 @@ mod lottery {
         pub bets: Vec<Bet>,
         pub winning_number: u16,
         pub winners: Vec<Winner>,
+        pub status: DrawStatus,
         pub is_open: bool,
     }
 
@@ -278,6 +288,7 @@ mod lottery {
                 bets: Vec::new(),
                 winning_number: 0,
                 winners: Vec::new(),
+                status: DrawStatus::Open,
                 is_open: false,
             };
 
@@ -307,17 +318,19 @@ mod lottery {
         /// Open draw
         #[ink(message)]
         pub fn open_draw(&mut self, draw_number: u32) -> Result<(), Error> {
+            // Check if operator
             let caller = self.env().caller();
-
             if caller != self.lottery_setup.operator {
                 return Err(Error::BadOrigin);
             } 
 
+            // Check if draw exist
             let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
             if !draw_exists {
                 return Err(Error::DrawNotFound);
             }
 
+            // Open the draw for betting
             for draw in &mut self.draws {
                 if draw.draw_number == draw_number {
                     // Check if the draw is close to open
@@ -325,36 +338,69 @@ mod lottery {
                         return Err(Error::DrawStillOpen);
                     } else {
                         draw.is_open = true;
+                        draw.status = DrawStatus::Open;
                     }
                 }
             }
+
             Ok(())
         }
+
+        /// Process draw
+        #[ink(message)]
+        pub fn process_draw(&mut self, draw_number: u32) -> Result<(), Error> {
+            // Check if operator
+            // Check if draw exist
+            // Check if draw is open
+            // Check if draw status is Open (Still not processed)
+            // Close the draw (No one can bet anymore)
+            // Change draw status to Processing
+            // Generate random number
+        }
+
+        /// Override draw
+        #[ink(message)]
+        pub fn override_draw(&mut self, draw_number: u32,
+            winning_number: u16) -> Result<(), Error> {
+            // Check if operator
+            // Check if draw exist
+            // Check if draw status is Processing (Override is only after random winning number is generated)
+            // Change the random winning number
+        }        
 
         /// Close draw
         #[ink(message)]
         pub fn close_draw(&mut self, draw_number: u32) -> Result<(), Error> {
+            // Check if operator
             let caller = self.env().caller();
-
             if caller != self.lottery_setup.operator {
                 return Err(Error::BadOrigin);
             } 
 
+            // Check if draw exist and other statuses
             let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
             if !draw_exists {
                 return Err(Error::DrawNotFound);
+            } else {
+                // Check if draw already closed
+                // Check if draw status is Processing
             }
 
-            for draw in &mut self.draws {
-                if draw.draw_number == draw_number {
-                    // Check if the draw is open to close
-                    if draw.is_open {
-                       draw.is_open = false;
-                    } else {
-                        return Err(Error::DrawStillClose);
-                    }
-                }
-            }
+            // Get winners
+            
+            // Get winner's upline who are also betting
+
+            // If there are winners calculate the prices and upline percentage
+
+            // Distribute the price to the winners
+
+            // Distribute the upline percentage of the price to the upline who bet.
+            // If there is no upline it will be given to the operator by default.
+            
+            // Calculate rebate for all bettors
+
+            // Distribute the rebate to all bettors
+
             Ok(())
         }
 
@@ -486,6 +532,16 @@ mod lottery {
         #[ink(message)]
         pub fn get_draws(&self) -> Vec<Draw> {
             self.draws.clone()
+        }
+
+        /// Return all the bets
+        #[ink(message)]
+        pub fn get_bets(&self, draw_number:u32) -> Vec<Bet> {
+            self.draws
+                .iter()
+                .find(|d| d.draw_number == draw_number)
+                .map(|d| d.bets.clone())
+                .unwrap_or_default()
         }
         
     }
