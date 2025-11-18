@@ -31,6 +31,8 @@ mod lottery {
     pub enum Success {
         LotterySetup,
         LotteryStarted,
+        LotteryStopped,
+        DrawAdded,
         BetAdded,
     }
     
@@ -232,7 +234,7 @@ mod lottery {
                     operator: caller,
                     status: LotteryStatus::EmitError(Error::BadOrigin),
                 });
-                return Err(Error::BadOrigin);
+                return Ok(());
             } 
 
             if self.lottery_setup.is_started {
@@ -240,7 +242,7 @@ mod lottery {
                     operator: caller,
                     status: LotteryStatus::EmitError(Error::AlreadyStarted),
                 });
-                return Err(Error::AlreadyStarted);
+                return Ok(());
             }
 
             if current_block > self.lottery_setup.starting_block {
@@ -248,7 +250,7 @@ mod lottery {
                     operator: caller,
                     status: LotteryStatus::EmitError(Error::StartingBlockPassed),
                 });
-                return Err(Error::StartingBlockPassed);
+                return Ok(());
             }
 
             self.lottery_setup.is_started = true;
@@ -257,20 +259,28 @@ mod lottery {
                 operator: caller,
                 status: LotteryStatus::EmitSuccess(Success::LotteryStarted),
             });
-
             Ok(())
         }
 
         /// Stop the lottery
         #[ink(message)]
         pub fn stop(&mut self) -> Result<(), Error> {
-            
-            if self.env().caller() != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+            let caller = self.env().caller();
+
+            if caller != self.lottery_setup.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             self.lottery_setup.is_started = false;
 
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::LotteryStopped),
+            });
             Ok(())
         }
 
@@ -282,14 +292,24 @@ mod lottery {
         #[ink(message)]
         pub fn add_draw(&mut self, block_interval: u16, 
             bet_amount: u128) -> Result<(), Error>  {
+            let caller = self.env().caller();
+
             // Only the operator can add a draw
-            if self.env().caller() != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+            if caller != self.lottery_setup.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             // Must not exceed the maximum number of draws setup in the lottery
             if self.draws.len() >= self.lottery_setup.maximum_draws.into() {
-                return Err(Error::TooManyDraws);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::TooManyDraws),
+                });
+                return Ok(());
             }
 
             let next_draw_number = self.draws
@@ -314,6 +334,10 @@ mod lottery {
 
             self.draws.push(new_draw);
 
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawAdded),
+            });
             Ok(())
         }
 

@@ -4,10 +4,14 @@ import { Keyring } from "@polkadot/keyring";
 import fs from "fs";
 import 'dotenv/config';
 
+import { decode } from "./decode.js";
+
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
-const ACCOUNT = process.env.ACCOUNT;
+const ALICE = process.env.ALICE;
+const BOB = process.env.BOB;
+const CHARLIE = process.env.CHARLIE;
 
 /// Test the blockchain connection
 console.log("Connecting to blockchain...");
@@ -19,7 +23,9 @@ const abiJSON = JSON.parse(fs.readFileSync(CONTRACT_ABI_PATH, "utf8"));
 const contract = new ContractPromise(api, abiJSON, CONTRACT_ADDRESS);
 
 const keyring = new Keyring({ type: "sr25519" });
-const alice = keyring.addFromUri(ACCOUNT);
+const alice = keyring.addFromUri(ALICE);
+const bob = keyring.addFromUri(BOB);
+const charlie = keyring.addFromUri(CHARLIE);
 
 const gasLimit = api.registry.createType('WeightV2', {
           refTime: 300000000000,
@@ -36,39 +42,64 @@ const formattedAmount = api.createType(
       amount
 );
 
-await new Promise(async (resolve, reject) => {
-  const unsub = await api.tx.assets.transferKeepAlive(
+let success = false;
+
+/// Send the token to the lottery contract
+const txHash = await new Promise(async (resolve, reject) => {
+
+  const tx = api.tx.assets.transferKeepAlive(
     asset_id,
     recipient,
     formattedAmount
-  ).signAndSend(alice, ({ status, dispatchError, events, txHash }) => {
-    console.log("Status:", status.type);
-    //console.log("Event:", events);
-    //console.log("Error:", dispatchError);
-    if (status.isInBlock) {
-      const isSuccess = events.some(({ event }) =>
-        event.section === "system" && event.method === "ExtrinsicSuccess"
-      );
+  );
 
-      if (isSuccess) {
-        console.log(txHash.toHex());
-      } else {
-        const failure = events.find(({ event }) =>
-          event.section === "system" && event.method === "ExtrinsicFailed"
-        );
-        const [dispatchError] = failure.event.data;
-        if (dispatchError.isModule) {
-          const decoded = api.registry.findMetaError(dispatchError.asModule);
-          console.log(decoded.section);
-          console.log(decoded.name);
-          console.log(decoded.docs.join(" "));
+  const hash = tx.hash.toHex();
+
+  const unsub = await tx.signAndSend(charlie, ({ status, events, data  }) => {
+    console.log("Status:", status?.type);
+    if(events?.length > 0) {
+      events.forEach(({ event }) => {
+        if (event.section === "assets" && event.method === "Transferred") {
+          success = true;
+          console.log("Transfer successful.");
+          unsub();
+          resolve(hash);
         }
-      }
-
-      unsub();
-      resolve();
+      });
     }
   });
 });
+
+/// If successful, record the bet
+const draw_number = 1;
+const bet_number = 123;
+const bettor = charlie.address; 
+const upline = bob.address; 
+
+if (success) {
+  await new Promise(async (resolve, reject) => {
+    const unsub = await contract.tx
+      .addBet({ storageDepositLimit, gasLimit }, 
+        draw_number,
+        bet_number,
+        bettor,
+        upline,
+        txHash,
+      ).signAndSend(bob, ({ status, events }) => {    
+        console.log("Status:", status?.type);
+        if(events?.length > 0) {
+          events.forEach(({ event }) => {
+            if (event.section === "contracts" && event.method === "ContractEmitted") {
+              console.log(decode(event.data));
+              unsub();
+              resolve();
+            }
+          });
+        }
+    });
+  });
+}
+
+
 
 process.exit(0);

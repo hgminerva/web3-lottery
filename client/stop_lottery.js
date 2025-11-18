@@ -4,10 +4,13 @@ import { Keyring } from "@polkadot/keyring";
 import fs from "fs";
 import 'dotenv/config';
 
+import { decode } from "./decode.js";
+
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
-const ACCOUNT = process.env.ACCOUNT;
+const ALICE = process.env.ALICE;
+const BOB = process.env.BOB;
 
 /// Test the blockchain connection
 console.log("Connecting to blockchain...");
@@ -19,7 +22,8 @@ const abiJSON = JSON.parse(fs.readFileSync(CONTRACT_ABI_PATH, "utf8"));
 const contract = new ContractPromise(api, abiJSON, CONTRACT_ADDRESS);
 
 const keyring = new Keyring({ type: "sr25519" });
-const alice = keyring.addFromUri(ACCOUNT);
+const alice = keyring.addFromUri(ALICE);
+const bob = keyring.addFromUri(BOB);
 
 const gasLimit = api.registry.createType('WeightV2', {
           refTime: 300000000000,
@@ -30,16 +34,15 @@ const storageDepositLimit = null;
 await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
     .stop({ storageDepositLimit, gasLimit })
-    .signAndSend(alice, ({ status, events, dispatchError }) => {    
+    .signAndSend(bob, ({ status, events, dispatchError }) => {    
       console.log("Status:", status?.type);
       if(events?.length > 0) {
         events.forEach(({ event }) => {
-           const { section, method, data } = event;
-           if (section === "system") {
-            console.log(method);
-            unsub(); 
-            resolve();          
-           }
+          if (event.section === "contracts" && event.method === "ContractEmitted") {
+            console.log(decode(event.data));
+            unsub();
+            resolve();
+          }
         });
       }
     });

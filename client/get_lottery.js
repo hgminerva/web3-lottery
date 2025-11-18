@@ -7,7 +7,7 @@ import 'dotenv/config';
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
-const ACCOUNT = process.env.ACCOUNT;
+const ALICE = process.env.ALICE;
 
 /// Test the blockchain connection
 console.log("Connecting to blockchain...");
@@ -19,19 +19,13 @@ const abiJSON = JSON.parse(fs.readFileSync(CONTRACT_ABI_PATH, "utf8"));
 const contract = new ContractPromise(api, abiJSON, CONTRACT_ADDRESS);
 
 const keyring = new Keyring({ type: "sr25519" });
-const alice = keyring.addFromUri(ACCOUNT);
+const alice = keyring.addFromUri(ALICE);
 
 const gasLimit = api.registry.createType('WeightV2', {
           refTime: 300000000000,
           proofSize: 500000,
 });
 const storageDepositLimit = null;
-
-/// Setup the lottery
-const startingBlock = 200;
-const dailyTotalBlocks = 14400;  // e.g., 1 day in blocks
-const maximumDraws = 2;
-const maximumBets = 1000;
 
 /// Get the lottery setup
 const { result, output } = await contract.query.getLotterySetup(alice.address, { 

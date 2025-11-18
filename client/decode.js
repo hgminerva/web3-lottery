@@ -10,21 +10,23 @@ export function decode(data) {
     const payload = bytes.slice(32);            // event payload
 
     const errorMap = [
-        "AlreadyStarted",
-        "StartingBlockPassed",
-        "NoRecords",
-        "BadOrigin",
-        "TooManyDraws",
-        "DrawNotFound",
-        "DrawClosed",
-        "DrawOpen",
-        "DrawProcessed"
+        "Error::AlreadyStarted",
+        "Error::StartingBlockPassed",
+        "Error::NoRecords",
+        "Error::BadOrigin",
+        "Error::TooManyDraws",
+        "Error::DrawNotFound",
+        "Error::DrawClosed",
+        "Error::DrawOpen",
+        "Error::DrawProcessed"
     ]; 
 
     const successMap = [
-        "LotterySetup",
-        "LotteryStarted",
-        "BetAdded",
+        "Success::LotterySetup",
+        "Success::LotteryStarted",
+        "Success::LotteryStopped",
+        "Success::DrawAdded",
+        "Success::BetAdded",
     ];     
 
     if (payload[1] === 0) {

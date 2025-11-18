@@ -7,7 +7,7 @@ import 'dotenv/config';
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const CONTRACT_ABI_PATH = process.env.CONTRACT_ABI_PATH;
-const ACCOUNT = process.env.ACCOUNT;
+const ALICE = process.env.ALICE;
 
 /// Test the blockchain connection
 console.log("Connecting to blockchain...");
@@ -19,7 +19,7 @@ const abiJSON = JSON.parse(fs.readFileSync(CONTRACT_ABI_PATH, "utf8"));
 const contract = new ContractPromise(api, abiJSON, CONTRACT_ADDRESS);
 
 const keyring = new Keyring({ type: "sr25519" });
-const alice = keyring.addFromUri(ACCOUNT);
+const alice = keyring.addFromUri(ALICE);
 
 const gasLimit = api.registry.createType('WeightV2', {
           refTime: 300000000000,
