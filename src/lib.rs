@@ -16,7 +16,12 @@ pub mod errors;
 
 #[ink::contract]
 mod lottery {
+    use ink::env::hash;
     use ink::prelude::vec::Vec;
+    use ink::prelude::string::String;
+    use scale::{Decode, Encode};
+    use ink::env::Error as EnvError;
+
     use crate::errors::{Error, RuntimeError, ContractError};
     use crate::assets::{AssetsCall, RuntimeCall};
 
@@ -24,6 +29,7 @@ mod lottery {
     #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Success {
+        LotterySetup,
         LotteryStarted,
         BetAdded,
     }
@@ -44,13 +50,19 @@ mod lottery {
         status: LotteryStatus,
     } 
 
-    /// Success messages
+    /// Draw status
     #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum DrawStatus {
         Open,
         Processing,
         Close,
+    }
+
+    impl Default for DrawStatus {
+        fn default() -> Self {
+            Self::Open
+        }
     }
 
     /// Lottery Setup 
@@ -117,7 +129,7 @@ mod lottery {
         pub winners: Vec<Winner>,
         pub status: DrawStatus,
         pub is_open: bool,
-    }
+    }    
 
     /// Lottery
     #[ink(storage)]
@@ -187,7 +199,11 @@ mod lottery {
             // lottery setup.  The operator handles the functional activities of the 
             // lottery while the dev handles all technical issues.
             if self.env().caller() != self.lottery_setup.dev {
-                return Err(Error::BadOrigin);
+                self.env().emit_event(LotteryEvent {
+                    operator: self.lottery_setup.operator,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             self.lottery_setup.operator = operator;
@@ -198,6 +214,10 @@ mod lottery {
             self.lottery_setup.maximum_draws = maximum_draws;
             self.lottery_setup.maximum_bets = maximum_bets;
 
+            self.env().emit_event(LotteryEvent {
+                operator: self.lottery_setup.operator,
+                status: LotteryStatus::EmitSuccess(Success::LotterySetup),
+            });
             Ok(())
         }
 
@@ -335,7 +355,7 @@ mod lottery {
                 if draw.draw_number == draw_number {
                     // Check if the draw is close to open
                     if draw.is_open {
-                        return Err(Error::DrawStillOpen);
+                        return Err(Error::DrawOpen);
                     } else {
                         draw.is_open = true;
                         draw.status = DrawStatus::Open;
@@ -350,12 +370,48 @@ mod lottery {
         #[ink(message)]
         pub fn process_draw(&mut self, draw_number: u32) -> Result<(), Error> {
             // Check if operator
+            let caller = self.env().caller();
+            if caller != self.lottery_setup.operator {
+                return Err(Error::BadOrigin);
+            } 
+
             // Check if draw exist
+            let draw = self.draws.iter()
+                .find(|d| d.draw_number == draw_number)
+                .ok_or(Error::DrawNotFound)?;
+
             // Check if draw is open
-            // Check if draw status is Open (Still not processed)
-            // Close the draw (No one can bet anymore)
-            // Change draw status to Processing
+            if !draw.is_open {
+                return Err(Error::DrawClosed);
+            }
+
+            // Check if draw status is processing.  We can only process open draws
+            if draw.status == DrawStatus::Processing {
+                return Err(Error::DrawProcessed);
+            }
+
             // Generate random number
+            let seed = self.env().block_timestamp();
+            let mut input: Vec<u8> = Vec::new();
+            input.extend_from_slice(&seed.to_be_bytes());
+            input.extend_from_slice(&draw.draw_number.to_be_bytes());
+
+            let mut output = <hash::Keccak256 as hash::HashOutput>::Type::default();
+            ink::env::hash_bytes::<hash::Keccak256>(&input, &mut output);
+
+            let raw = u16::from_le_bytes([output[0], output[1]]);
+            let random_num = (raw % 999) + 1;
+
+            // Close the draw (No one can bet anymore)
+            let draw = self.draws.iter_mut()
+                .find(|d| d.draw_number == draw_number)
+                .ok_or(Error::DrawNotFound)?;
+
+            draw.is_open = false;            
+            draw.status = DrawStatus::Processing;
+            draw.winning_number = random_num;
+
+            Ok(())
         }
 
         /// Override draw
@@ -366,6 +422,8 @@ mod lottery {
             // Check if draw exist
             // Check if draw status is Processing (Override is only after random winning number is generated)
             // Change the random winning number
+
+            Ok(())
         }        
 
         /// Close draw
@@ -421,13 +479,17 @@ mod lottery {
             /// Add bet is called at the server by the operator as soon as tx_hash transfer 
             /// of bet has been verified.
             if caller != self.lottery_setup.operator {
-                return Err(ContractError::Internal(Error::BadOrigin));
+                self.env().emit_event(LotteryEvent {
+                    operator: self.lottery_setup.operator,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             // Find the draw number
             let draw = self.draws.iter()
                 .find(|d| d.draw_number == draw_number)
-                .ok_or(ContractError::Internal(Error::DrawNotFound))?;
+                .ok_or(ContractError::Internal(Error::DrawNotFound))?;        /// Logs any message or error in the lottery contract (10 logs max)
 
             // Shares
             let jackpot_share   = draw.bet_amount * 50 / 100;

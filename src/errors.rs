@@ -10,18 +10,20 @@ pub enum Error {
     AlreadyStarted,
     /// Error when starting the lottery beyond the starting block
     StartingBlockPassed,
+    /// Standard error if it could not find the record
+    NoRecords,    
     /// Standard error if the account is not was is expected
     BadOrigin,
-    /// Standard error if it could not find the record
-    NoRecords,
     /// Total draws exceeded the set maximum draws
     TooManyDraws,
     /// Cannot find the draw number
     DrawNotFound,
     /// The draw is still close
-    DrawStillClose,
+    DrawClosed,
     /// The draw is still open
-    DrawStillOpen,
+    DrawOpen,
+    /// The draw is still being processed
+    DrawProcessed,
     /// The bet must equal to the set bet amount
     InvalidBetAmount,
 }
