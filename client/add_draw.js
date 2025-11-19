@@ -31,8 +31,8 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-const block_interval = 700;
-const bet_amount = 5000;  
+const block_interval = 50;
+const bet_amount = 500000;  
 
 await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
