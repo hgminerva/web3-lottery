@@ -33,6 +33,7 @@ mod lottery {
         LotteryStarted,
         LotteryStopped,
         DrawAdded,
+        DrawOpened,
         DrawProcessed,
         DrawClosed,
         BetAdded,
@@ -73,31 +74,32 @@ mod lottery {
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct LotterySetup {
-        // Admin settings
-        // --------------
-        // Operator of the lottery
+        // Admin settings:
+        // The operator of the lottery. This account starts and stops the lottery and manages
+        // the draws. Through this account, the operator monitors asset transfer hashes sent
+        // to the contract and adds bets once they are verified.
         pub operator: AccountId,
-        // Developer of the lottery
+        // The developer of the lottery.  This account set up the lottery and the draws tailored
+        // to the requirements of the operator.
         pub dev: AccountId,
         // Asset id of the token, e.g., USDT
         pub asset_id: u128,
-        
-        // Used for off-chain lottery job
-        // ------------------------------
-        // Starting block of the lottery (this may change of the a daily/cycle basis)
+        // Used for off-chain lottery job:
+        // Once this block has been reached the job will start the lottery at the same time
+        // calculate the next starting block based on the daily (cycle) total blocks.
         pub starting_block: u32,
-        // Total blocks every day/cycle
+        // Total blocks every day/cycle.  Used to calculate the next starting block of the
+        // lottery.  In production it must constitute to a 24-hour cycle.
         pub daily_total_blocks: u32,
-        // Next starting block
+        // Once all draws has been closed and the lottery is closing, this value will transfer
+        // to the starting block and immediately computes for the new value for the nex
+        // starting block.
         pub next_starting_block: u32,
-
-        // Controls
-        // --------
-        // Maximum draws
+        // Maximum draws allowed per lottery
         pub maximum_draws: u8,
-        // Maximum bet
+        // Maximum bets allowed per draw per lottery
         pub maximum_bets: u16,
-        // Started
+        // Starts and stops the lottery
         pub is_started: bool,
     }
 
@@ -129,14 +131,34 @@ mod lottery {
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct Draw {
         pub draw_number: u32,
-        pub block_interval: u16,
+        // Total blocks prior to draw opening from the lottery starting block
+        pub opening_blocks: u32,
+        // Total blocks before processing from the lottery’s starting block.  
+        // The total processing blocks must be greater than the opening blocks.  
+        // The difference between the opening blocks and the total processing  
+        // blocks determines the time window during which the draw accepts bets.
+        pub processing_blocks: u32,
+        // Total blocks before closing from the lottery's starting block.
+        // The total closing blocks must be greater than the processing blocks.
+        // The difference between the processing blocks and the total closing
+        // blocks determines the time window during which the draw processed the
+        // winners.
+        pub closing_blocks: u32,
+        // Fixed amount for all bet in the draw.
         pub bet_amount: u128,
+        // Total accumulated jackpot 
         pub jackpot: u128,
+        // Total accumulated rebate. 10% of the jackpot share will go to the rebate
         pub rebate: u128,
+        // Bets
         pub bets: Vec<Bet>,
+        // Winning number will be generated during the processed period of the draw.
         pub winning_number: u16,
+        // Winners are bets that matches the winning number.
         pub winners: Vec<Winner>,
+        // Status of the draw, e.g., Open, Process, Close
         pub status: DrawStatus,
+        // True (accepts bets otherwise bets are denied)
         pub is_open: bool,
     }    
 
@@ -255,7 +277,7 @@ mod lottery {
             if current_block > self.lottery_setup.starting_block {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
-                    status: LotteryStatus::EmitError(Error::StartingBlockPassed),
+                    status: LotteryStatus::EmitError(Error::InvalidBlock),
                 });
                 return Ok(());
             }
@@ -295,13 +317,21 @@ mod lottery {
         /// -------------
         /// All functions related to draws
         
-        /// Add draw
+        /// Add draw:
+        /// 
+        /// 1. Only the operator can add a draw.
+        /// 2. The draw can only be added if the lottery is stopped.
+        /// 3. It must be important that the following hierarchy of value must be followed.
+        ///    lottery.daily_total_blocks > closing_blocks > processing_blocks > opening_blocks
         #[ink(message)]
-        pub fn add_draw(&mut self, block_interval: u16, 
+        pub fn add_draw(&mut self, 
+            opening_blocks: u32,
+            processing_blocks: u32,
+            closing_blocks: u32,
             bet_amount: u128) -> Result<(), Error>  {
-            let caller = self.env().caller();
-
+            
             // Only the operator can add a draw
+            let caller = self.env().caller();      
             if caller != self.lottery_setup.operator {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
@@ -319,6 +349,28 @@ mod lottery {
                 return Ok(());
             }
 
+            // Blocks must follow hierarchy order.
+            if self.lottery_setup.daily_total_blocks > closing_blocks && 
+               closing_blocks > processing_blocks && 
+               processing_blocks > opening_blocks {
+                // Do nothing and continue
+            } else {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::InvalidBlocksHierarchy),
+                });
+                return Ok(());
+            }
+
+            // Check if the lottery is stopped
+            if self.lottery_setup.is_started == true {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::AlreadyStarted),
+                });
+                return Ok(());
+            }
+
             let next_draw_number = self.draws
                                             .iter()
                                             .map(|d| d.draw_number)
@@ -328,14 +380,16 @@ mod lottery {
 
             let new_draw = Draw {
                 draw_number: next_draw_number,
-                block_interval: block_interval,
+                opening_blocks: opening_blocks,
+                processing_blocks: processing_blocks,
+                closing_blocks: closing_blocks,
                 bet_amount: bet_amount,
                 jackpot: 0,
                 rebate: 0,
                 bets: Vec::new(),
                 winning_number: 0,
                 winners: Vec::new(),
-                status: DrawStatus::Open,
+                status: DrawStatus::Close,
                 is_open: false,
             };
 
@@ -348,17 +402,39 @@ mod lottery {
             Ok(())
         }
 
-        /// Remove draw
+        /// Remove draw:
+        /// 
+        /// 1. Only the operator can remove a draw.
+        /// 2. The lottery must be stopped before removing a draw.
+        /// 3. The removal is last-in-first-out sequence
         #[ink(message)]
         pub fn remove_draw(&mut self) -> Result<(), Error> {
             // Only the operator can add a draw
-            if self.env().caller() != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+            let caller = self.env().caller();      
+            if caller != self.lottery_setup.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             // No more draw record
             if self.draws.len() == 0 {
-                return Err(Error::NoRecords);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::NoRecords),
+                });
+                return Ok(());
+            }
+
+            // Check if the lottery is stopped
+            if self.lottery_setup.is_started == true {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::AlreadyStarted),
+                });
+                return Ok(());
             }
 
             self.draws.pop();
@@ -367,29 +443,61 @@ mod lottery {
         }
 
         /// Open draw
+        /// 
+        /// 1. Only the operator can open a draw
+        /// 2. The draw status must be close and the is_open flag must be false before
+        ///    you can open a draw.
+        /// 3. The block number must be greater than the lottery starting block plus the
+        ///    draw blocks opening.
         #[ink(message)]
         pub fn open_draw(&mut self, draw_number: u32) -> Result<(), Error> {
-            // Check if operator
-            let caller = self.env().caller();
+            // Only the operator can add a draw
+            let caller = self.env().caller();      
             if caller != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             // Check if draw exist
-            let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
-            if !draw_exists {
-                return Err(Error::DrawNotFound);
+            let draw = match self.draws.iter().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+
+            // The current block must be greater or equal to the draw opening blocks.
+            let current_block: u32 = self.env().block_number();
+            let draw_opening_blocks: u32 = self.lottery_setup.starting_block + draw.opening_blocks;
+            if draw_opening_blocks > current_block  {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::InvalidBlock),
+                });
+                return Ok(());
             }
+            
 
             // Open the draw for betting
             for draw in &mut self.draws {
                 if draw.draw_number == draw_number {
                     // Check if the draw is close to open
-                    if draw.is_open {
-                        return Err(Error::DrawOpen);
-                    } else {
+                    if !draw.is_open && draw.status == DrawStatus::Close {
                         draw.is_open = true;
                         draw.status = DrawStatus::Open;
+                    } else {
+                        self.env().emit_event(LotteryEvent {
+                            operator: caller,
+                            status: LotteryStatus::EmitError(Error::DrawOpen),
+                        });
+                        return Ok(());
                     }
                 }
             }

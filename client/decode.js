@@ -21,6 +21,7 @@ export function decode(data) {
         "Error::DrawProcessing",
         "Error::DrawNotProcessing",
         "Error::InvalidBetAmount",
+        "Error::InvalidBlocksHierarchy",
     ]; 
 
     const successMap = [
@@ -28,6 +29,7 @@ export function decode(data) {
         "Success::LotteryStarted",
         "Success::LotteryStopped",
         "Success::DrawAdded",
+        "Success::DrawOpened",
         "Success::DrawProcessed",
         "Success::DrawClosed",
         "Success::BetAdded",

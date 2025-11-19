@@ -9,7 +9,7 @@ pub enum Error {
     /// Attempt to start the lottery when it is already started
     AlreadyStarted,
     /// Error when starting the lottery beyond the starting block
-    StartingBlockPassed,
+    InvalidBlock,
     /// Standard error if it could not find the record
     NoRecords,    
     /// Standard error if the account is not was is expected
@@ -28,6 +28,8 @@ pub enum Error {
     DrawNotProcessing,
     /// The bet must equal to the set bet amount
     InvalidBetAmount,
+    /// Invalid blocks hierarchy
+    InvalidBlocksHierarchy,
 }
 
 /// Runtime call execution error
