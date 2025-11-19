@@ -23,7 +23,9 @@ pub enum Error {
     /// The draw is still open
     DrawOpen,
     /// The draw is still being processed
-    DrawProcessed,
+    DrawProcessing,
+    /// The draw is not anymore processing
+    DrawNotProcessing,
     /// The bet must equal to the set bet amount
     InvalidBetAmount,
 }

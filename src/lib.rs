@@ -33,6 +33,8 @@ mod lottery {
         LotteryStarted,
         LotteryStopped,
         DrawAdded,
+        DrawProcessed,
+        DrawClosed,
         BetAdded,
     }
     
@@ -113,8 +115,13 @@ mod lottery {
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct Winner {
+        pub draw_number: u32,
         pub bettor: AccountId,
-        pub winning_amount: Balance,
+        pub upline: AccountId,
+        pub bet_number: u16,
+        pub tx_hash: Vec<u8>,
+        pub bettor_share: u128,
+        pub upline_share: u128,
     }
 
     /// Draw meta data 
@@ -396,22 +403,41 @@ mod lottery {
             // Check if operator
             let caller = self.env().caller();
             if caller != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
             // Check if draw exist
-            let draw = self.draws.iter()
-                .find(|d| d.draw_number == draw_number)
-                .ok_or(Error::DrawNotFound)?;
+            let draw = match self.draws.iter().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
 
             // Check if draw is open
             if !draw.is_open {
-                return Err(Error::DrawClosed);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::DrawClosed),
+                });
+                return Ok(());
             }
 
             // Check if draw status is processing.  We can only process open draws
             if draw.status == DrawStatus::Processing {
-                return Err(Error::DrawProcessed);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::DrawProcessing),
+                });
+                return Ok(());
             }
 
             // Generate random number
@@ -427,14 +453,25 @@ mod lottery {
             let random_num = (raw % 999) + 1;
 
             // Close the draw (No one can bet anymore)
-            let draw = self.draws.iter_mut()
-                .find(|d| d.draw_number == draw_number)
-                .ok_or(Error::DrawNotFound)?;
+            let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
 
             draw.is_open = false;            
             draw.status = DrawStatus::Processing;
             draw.winning_number = random_num;
 
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawProcessed),
+            });
             Ok(())
         }
 
@@ -442,48 +479,182 @@ mod lottery {
         #[ink(message)]
         pub fn override_draw(&mut self, draw_number: u32,
             winning_number: u16) -> Result<(), Error> {
-            // Check if operator
-            // Check if draw exist
-            // Check if draw status is Processing (Override is only after random winning number is generated)
-            // Change the random winning number
 
+            // Check if operator
+            let caller = self.env().caller();
+            if caller != self.lottery_setup.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
+
+            // Check if draw exist
+            let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+
+            // Check if draw status is Processing (Override is only after random winning number is generated)
+            if draw.status == DrawStatus::Processing {
+
+                 // Change the random winning number
+                draw.winning_number = winning_number;
+
+            } else {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::DrawNotProcessing),
+                });
+                return Ok(());
+            }
+
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawProcessed),
+            });
             Ok(())
         }        
 
         /// Close draw
         #[ink(message)]
-        pub fn close_draw(&mut self, draw_number: u32) -> Result<(), Error> {
+        pub fn close_draw(&mut self, draw_number: u32) -> Result<(), ContractError> {
+
             // Check if operator
             let caller = self.env().caller();
             if caller != self.lottery_setup.operator {
-                return Err(Error::BadOrigin);
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
             } 
 
-            // Check if draw exist and other statuses
-            let draw_exists = self.draws.iter().any(|d| d.draw_number == draw_number);
-            if !draw_exists {
-                return Err(Error::DrawNotFound);
-            } else {
-                // Check if draw already closed
-                // Check if draw status is Processing
+            // Check if draw exist
+            let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+            
+            // Get winners
+            let mut winners: Vec<Winner> = draw
+                .bets
+                .iter()
+                .filter(|b| b.bet_number == draw.winning_number)
+                .map(|b| Winner {
+                    draw_number: draw.draw_number,
+                    bettor: b.bettor,
+                    upline: b.upline,
+                    bet_number: b.bet_number,
+                    tx_hash: b.tx_hash.clone(),
+                    bettor_share: 0,
+                    upline_share: 0,
+                })
+                .collect();         
+            
+            // Count the number of winners
+            let count_winners = winners.len() as u128;
+
+            // Distribute the share of the jackpot to the winners
+            if count_winners > 0 {
+                let jackpot_share   = draw.jackpot * 90 / 100;
+                let upline_share   = draw.jackpot * 10 / 100;
+
+                for w in winners.iter_mut() {
+                    w.bettor_share = jackpot_share / count_winners;
+                    w.upline_share = upline_share / count_winners;
+                }  
+
+                draw.winners = winners;           
+
+                // Drop the mutable draw to start the transfer
+                let draw = self.draws.iter()
+                    .find(|d| d.draw_number == draw_number)
+                    .ok_or(ContractError::Internal(Error::DrawNotFound))?; 
+
+                // Transfer the balances of the winners and the upline
+                for winner in draw.winners.iter() {
+                    // Winners
+                    self.env()
+                        .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                            id: self.lottery_setup.asset_id,
+                            target: winner.bettor.into(),
+                            amount: winner.bettor_share,
+                        }))
+                        .map_err(|_| RuntimeError::CallRuntimeFailed)?;                
+
+                    // Upline
+                    self.env()
+                        .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                            id: self.lottery_setup.asset_id,
+                            target: winner.upline.into(),
+                            amount: winner.upline_share,
+                        }))
+                        .map_err(|_| RuntimeError::CallRuntimeFailed)?;                
+                } 
             }
 
-            // Get winners
-            
-            // Get winner's upline who are also betting
+            // Distribute the shares of the rebate to the bettors.
+            //
+            // Drop the mutable draw to start the transfer
+            let draw = self.draws.iter()
+                .find(|d| d.draw_number == draw_number)
+                .ok_or(ContractError::Internal(Error::DrawNotFound))?;             
 
-            // If there are winners calculate the prices and upline percentage
+            // Count the bettors
+            let count_bettors = draw.bets.len() as u128;
 
-            // Distribute the price to the winners
+            if count_bettors > 0 {
+                // Rebate share per bet
+                let bettor_share = draw.rebate / count_bettors;
 
-            // Distribute the upline percentage of the price to the upline who bet.
-            // If there is no upline it will be given to the operator by default.
-            
-            // Calculate rebate for all bettors
+                for bet in draw.bets.iter() {
+                    // Bettors
+                    self.env()
+                        .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                            id: self.lottery_setup.asset_id,
+                            target: bet.bettor.into(),
+                            amount: bettor_share,
+                        }))
+                        .map_err(|_| RuntimeError::CallRuntimeFailed)?;   
+                }
+            }
 
-            // Distribute the rebate to all bettors
+            // Change the status of the draw from open to close
+            let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
 
+            draw.status = DrawStatus::Close;
+            draw.is_open = false;
+
+
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawClosed),
+            });
             Ok(())
+
         }
 
         /// Bets
