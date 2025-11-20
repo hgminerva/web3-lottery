@@ -33,7 +33,7 @@ const storageDepositLimit = null;
 
 /// Setup the lottery
 const asset_id = 1984;
-const startingBlock = 550;
+const startingBlock = 1155;
 const dailyTotalBlocks = 10; 
 const maximumDraws = 2;
 const maximumBets = 5;

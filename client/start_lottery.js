@@ -25,6 +25,8 @@ export async function startLottery(api) {
   });
   const storageDepositLimit = null;
 
+  let event_message = "";
+
   await new Promise(async (resolve, reject) => {
     const unsub = await contract.tx
       .start({ storageDepositLimit, gasLimit })
@@ -33,15 +35,15 @@ export async function startLottery(api) {
         if(events?.length > 0) {
           events.forEach(({ event }) => {
             if (event.section === "contracts" && event.method === "ContractEmitted") {
+              event_message = decode(event.data);
+
               unsub();
               resolve();
-
-              return decode(event.data);
             }
           });
         }
       });
   });
 
-  return "Start Error";
+  return event_message;
 }

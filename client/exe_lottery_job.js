@@ -27,6 +27,7 @@ import { getLottery } from "./get_lottery.js";
 import { getDraws } from "./get_draws.js";
 
 import { startLottery } from "./start_lottery.js";
+import { stopLottery } from "./stop_lottery.js";
 
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 
@@ -36,15 +37,30 @@ async function main () {
     const api = await ApiPromise.create({ provider: wsProvider });
     console.log("Connected to:", (await api.rpc.system.chain()).toHuman());
 
+    let current_block = 0;
+    let starting_block = 0;
+    let next_starting_block = 0;    
+
+    const colors = {
+        red: (t) => `\x1b[31m${t}\x1b[0m`,
+        green: (t) => `\x1b[32m${t}\x1b[0m`,
+        yellow: (t) => `\x1b[33m${t}\x1b[0m`
+    };    
+
     const unsubscribe = await api.rpc.chain.subscribeNewHeads((header) => {
-        console.log(`Block: #${header.number}`);
+        console.log(colors.yellow(`Block: #${header.number}`));
 
         let lottery_started = false;
+
+        current_block = header.number;
 
         // Get lottery and draw information
         getLottery(api).then((lottery) => {
             if (lottery != null) {
-                console.log(`Lottery (${lottery.Ok.isStarted}): [${lottery.Ok.startingBlock},${lottery.Ok.nextStartingBlock}]`);
+                console.log(`Lottery (${lottery.Ok.isStarted}): [${lottery.Ok.startingBlock}, ${lottery.Ok.nextStartingBlock}]`);
+
+                starting_block = lottery.Ok.startingBlock.replace(/,/g, '');
+                next_starting_block = lottery.Ok.nextStartingBlock.replace(/,/g, '');
 
                 // Starting and stopping lottery
                 if (lottery.Ok.isStarted) {
@@ -53,24 +69,29 @@ async function main () {
                     lottery_started = false
                 }
                 
-                getDraws(api).then((draws) => {
-                    console.log(
-                        draws.Ok.map(d => `Draw: #${d.drawNumber} (${d.status},${d.isOpen}): ${d.winningNumber}`).join(", ")
-                    );
-                });
+                // Start when not yet started and current block is greater or equal to the starting block
+                if (!lottery_started && current_block >= starting_block) {
+                    startLottery(api).then((event) => {
+                        console.log(colors.green(`Start: ${event}`));
+                    });
+                }  
+                
+                // Stop if all draws are close already.  If no draws, we will use the next starting block
+                if (lottery_started && current_block >= next_starting_block) {
+                    stopLottery(api).then((event) => {
+                        console.log(colors.red(`Stop: ${event}`));
+                    });
+                }
+
+                // getDraws(api).then((draws) => {
+                //     console.log(
+                //         draws.Ok.map(d => `Draw: #${d.drawNumber} (${d.status},${d.isOpen}): ${d.winningNumber}`).join(", ")
+                //     );
+                // });
             }
         });
 
-        // Start or stop lottery information
-        if (!lottery_started) {
-            startLottery(api).then((event) => {
-                console.log(event);
-            });
-        } else {
-            stopLottery(api).then((event) => {
-                console.log(event);
-            });
-        }
+
 
     });
 }
