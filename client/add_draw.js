@@ -31,13 +31,18 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-const block_interval = 50;
+const opening_blocks = 5;
+const processing_blocks = 10;
+const closing_blocks = 15;
 const bet_amount = 500000;  
 
 await new Promise(async (resolve, reject) => {
+
   const unsub = await contract.tx
     .addDraw({ storageDepositLimit, gasLimit }, 
-      block_interval,
+      opening_blocks,
+      processing_blocks,
+      closing_blocks,
       bet_amount,
     ).signAndSend(bob, ({ status, events, dispatchError }) => {    
       console.log("Status:", status?.type);
@@ -51,6 +56,7 @@ await new Promise(async (resolve, reject) => {
         });
       }
   });
+
 });
 
 process.exit(0);

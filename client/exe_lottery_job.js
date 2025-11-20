@@ -29,7 +29,18 @@ import { getDraws } from "./get_draws.js";
 import { startLottery } from "./start_lottery.js";
 import { stopLottery } from "./stop_lottery.js";
 
+import { openDraw } from "./open_draw.js";
+import { processDraw } from "./process_draw.js";
+import { closeDraw } from "./close_draw.js";
+
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+
+function truncateMiddle(str, head = 5, tail = 5) {
+  if (typeof str !== 'string') return String(str ?? '');
+  if (str.length <= head + tail + 3) return str; 
+  return `${str.slice(0, head)}...${str.slice(-tail)}`;
+}
 
 async function main () {
     console.log("Connecting to blockchain...");
@@ -44,66 +55,81 @@ async function main () {
     const colors = {
         red: (t) => `\x1b[31m${t}\x1b[0m`,
         green: (t) => `\x1b[32m${t}\x1b[0m`,
-        yellow: (t) => `\x1b[33m${t}\x1b[0m`
+        yellow: (t) => `\x1b[33m${t}\x1b[0m`,
+        purple: (t) => `\x1b[35m${t}\x1b[0m`
     };    
 
     const unsubscribe = await api.rpc.chain.subscribeNewHeads((header) => {
         console.log(colors.yellow(`Block: #${header.number}`));
-
-        let lottery_started = false;
 
         current_block = header.number;
 
         // Get lottery and draw information
         getLottery(api).then((lottery) => {
             if (lottery != null) {
-                console.log(`Lottery (${lottery.Ok.isStarted}): [${lottery.Ok.startingBlock}, ${lottery.Ok.nextStartingBlock}]`);
+                console.log(`Lottery ${truncateMiddle(CONTRACT_ADDRESS)} (${lottery.Ok.isStarted}): [${lottery.Ok.startingBlock}, ${lottery.Ok.nextStartingBlock}] O:${truncateMiddle(lottery.Ok.operator)}, D:${truncateMiddle(lottery.Ok.dev)}`);
 
-                starting_block = lottery.Ok.startingBlock.replace(/,/g, '');
-                next_starting_block = lottery.Ok.nextStartingBlock.replace(/,/g, '');
+                starting_block = Number(lottery.Ok.startingBlock.replace(/,/g, ''));
+                next_starting_block = Number(lottery.Ok.nextStartingBlock.replace(/,/g, ''));
 
-                // Starting and stopping lottery
-                if (lottery.Ok.isStarted) {
-                    lottery_started = true;
-                } else {
-                    lottery_started = false
-                }
+                getDraws(api).then((draws) => {
+                    console.log(colors.purple(
+                        draws.Ok.map(d => {
+                            const opening_blocks = Number(d.openingBlocks.replace(/,/g, '')) + starting_block;
+                            const processing_blocks = Number(d.processingBlocks.replace(/,/g, '')) + starting_block;
+                            const closing_blocks = Number(d.closingBlocks.replace(/,/g, '')) + starting_block;
+
+                            // Open the draw
+                            if (!d.isOpen && d.status == "Close" && current_block >= opening_blocks) {
+                                // Prevention from re-opening of draw in the cycle.
+                                // Draws can only open once per cycle.
+                                if(current_block < closing_blocks) {
+                                    openDraw(api, d.drawNumber).then((event) => {
+                                        console.log(colors.green(`Start: ${event}`));
+                                    });
+                                }
+                            }
+
+                            // Process the draw
+                            if (d.isOpen && d.status == "Open" && current_block >= processing_blocks) {
+                                processDraw(api, d.drawNumber).then((event) => {
+                                    console.log(colors.green(`Start: ${event}`));
+                                });
+                            }    
+
+                            // Close the draw
+                            if (!d.isOpen && d.status == "Processing" && current_block >= closing_blocks) {
+                                closeDraw(api, d.drawNumber).then((event) => {
+                                    console.log(colors.green(`Start: ${event}`));
+                                });
+                            }
+                            
+                            return `[Draw: #${d.drawNumber} (${d.status}, ${d.isOpen}, O:${opening_blocks}, P:${processing_blocks}, C:${closing_blocks}): ` +
+                                `${d.jackpot}USDT (Bets:${d.bets.length})]`;
+                        }).join(", ")
+                    ));
+                }); 
                 
                 // Start when not yet started and current block is greater or equal to the starting block
-                if (!lottery_started && current_block >= starting_block) {
+                if (!lottery.Ok.isStarted && current_block >= starting_block) {
                     startLottery(api).then((event) => {
                         console.log(colors.green(`Start: ${event}`));
                     });
                 }  
                 
                 // Stop if all draws are close already.  If no draws, we will use the next starting block
-                if (lottery_started && current_block >= next_starting_block) {
+                if (lottery.Ok.isStarted && current_block >= next_starting_block) {
                     stopLottery(api).then((event) => {
                         console.log(colors.red(`Stop: ${event}`));
                     });
                 }
 
-                // getDraws(api).then((draws) => {
-                //     console.log(
-                //         draws.Ok.map(d => `Draw: #${d.drawNumber} (${d.status},${d.isOpen}): ${d.winningNumber}`).join(", ")
-                //     );
-                // });
             }
         });
-
-
 
     });
 }
 
-
 main().catch(console.error);
 
-/// Test scenario
-/// 1. Lottery start/stop
-///     1.1. No draws
-///     1.2. Start block: 100
-///     1.3. Total daily blocks: 20
-/// 2. Test if all the controls are working
-/// 3. Test of the next_starting_block is carried over
 

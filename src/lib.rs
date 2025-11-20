@@ -278,7 +278,7 @@ mod lottery {
 
             // Check block
             let current_block: u32 = self.env().block_number();
-            if current_block > self.lottery_setup.starting_block {
+            if current_block < self.lottery_setup.starting_block {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
                     status: LotteryStatus::EmitError(Error::InvalidBlock),
