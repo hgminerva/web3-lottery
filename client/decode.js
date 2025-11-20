@@ -11,7 +11,7 @@ export function decode(data) {
 
     const errorMap = [
         "Error::AlreadyStarted",
-        "Error::StartingBlockPassed",
+        "Error::InvalidBlock",
         "Error::NoRecords",
         "Error::BadOrigin",
         "Error::TooManyDraws",
@@ -29,6 +29,7 @@ export function decode(data) {
         "Success::LotteryStarted",
         "Success::LotteryStopped",
         "Success::DrawAdded",
+        "Success::DrawRemoved",
         "Success::DrawOpened",
         "Success::DrawProcessed",
         "Success::DrawClosed",

@@ -18,9 +18,6 @@ pub mod errors;
 mod lottery {
     use ink::env::hash;
     use ink::prelude::vec::Vec;
-    use ink::prelude::string::String;
-    use scale::{Decode, Encode};
-    use ink::env::Error as EnvError;
 
     use crate::errors::{Error, RuntimeError, ContractError};
     use crate::assets::{AssetsCall, RuntimeCall};
@@ -33,6 +30,7 @@ mod lottery {
         LotteryStarted,
         LotteryStopped,
         DrawAdded,
+        DrawRemoved,
         DrawOpened,
         DrawProcessed,
         DrawClosed,
@@ -219,7 +217,6 @@ mod lottery {
         #[ink(message)]
         pub fn setup(&mut self, 
                      operator: AccountId,
-                     dev: AccountId,
                      asset_id: u128,
                      starting_block: u32,
                      daily_total_blocks: u32,
@@ -244,6 +241,7 @@ mod lottery {
             self.lottery_setup.next_starting_block = starting_block + daily_total_blocks;
             self.lottery_setup.maximum_draws = maximum_draws;
             self.lottery_setup.maximum_bets = maximum_bets;
+            self.lottery_setup.is_started = false;
 
             self.env().emit_event(LotteryEvent {
                 operator: self.lottery_setup.operator,
@@ -253,11 +251,14 @@ mod lottery {
         }
 
         /// Start the lottery
+        /// 
+        /// 1. Only the operator can start the lottery
+        /// 2. The current block must be greater than the starting block
         #[ink(message)]
         pub fn start(&mut self) -> Result<(), Error>  {
-            let current_block: u32 = self.env().block_number();
+            
+            // The caller must be the operator
             let caller = self.env().caller();
-
             if caller != self.lottery_setup.operator {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
@@ -266,6 +267,7 @@ mod lottery {
                 return Ok(());
             } 
 
+            // Check of already started
             if self.lottery_setup.is_started {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
@@ -274,6 +276,8 @@ mod lottery {
                 return Ok(());
             }
 
+            // Check block
+            let current_block: u32 = self.env().block_number();
             if current_block > self.lottery_setup.starting_block {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
@@ -292,10 +296,17 @@ mod lottery {
         }
 
         /// Stop the lottery
+        /// 
+        /// 1. The lottery can be stop only if all draws are closed
+        /// 2. Stopping the lottery if the block passes the starting block is also invalid.
+        ///    You must correct the setup of the lottery before stopping.
+        /// 3. Only the operator can stop the lottery.
+        /// 4. 
         #[ink(message)]
         pub fn stop(&mut self) -> Result<(), Error> {
-            let caller = self.env().caller();
 
+            // Check operator
+            let caller = self.env().caller();
             if caller != self.lottery_setup.operator {
                 self.env().emit_event(LotteryEvent {
                     operator: caller,
@@ -304,7 +315,31 @@ mod lottery {
                 return Ok(());
             } 
 
+            // Check if all draws are closed
+            for draw in self.draws.clone() {
+                if draw.is_open || draw.status == DrawStatus::Open {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawOpen),
+                    });
+                    return Ok(());
+                }
+            }
+
+            // Check if the current block did not pass the next lottery starting block
+            let current_block: u32 = self.env().block_number();
+            let next_lottery_starting_block: u32 = self.lottery_setup.next_starting_block;
+            if next_lottery_starting_block > current_block  {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::InvalidBlock),
+                });
+                return Ok(());
+            }
+
             self.lottery_setup.is_started = false;
+            self.lottery_setup.starting_block = self.lottery_setup.next_starting_block;
+            self.lottery_setup.next_starting_block = self.lottery_setup.next_starting_block + self.lottery_setup.daily_total_blocks;
 
             self.env().emit_event(LotteryEvent {
                 operator: caller,
@@ -439,6 +474,10 @@ mod lottery {
 
             self.draws.pop();
 
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawRemoved),
+            });
             Ok(())
         }
 
@@ -483,7 +522,6 @@ mod lottery {
                 });
                 return Ok(());
             }
-            
 
             // Open the draw for betting
             for draw in &mut self.draws {
@@ -502,10 +540,21 @@ mod lottery {
                 }
             }
 
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::DrawOpened),
+            });
             Ok(())
         }
 
         /// Process draw
+        /// 
+        /// 1. Processing means that stopping the lottery draw in accepting bets.
+        /// 2. At the same time it calculates in random the winning number.
+        /// 3. It will also gives the operator the opportunity to override the winning 
+        ///    number.
+        /// 4. It will also checks of the current block is greater than the sum of the
+        ///    lottery starting block and the processing blocks of the draw.
         #[ink(message)]
         pub fn process_draw(&mut self, draw_number: u32) -> Result<(), Error> {
             // Check if operator
@@ -548,6 +597,17 @@ mod lottery {
                 return Ok(());
             }
 
+            // The current block must be greater or equal to the draw processing blocks.
+            let current_block: u32 = self.env().block_number();
+            let draw_processing_blocks: u32 = self.lottery_setup.starting_block + draw.processing_blocks;
+            if draw_processing_blocks > current_block  {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::InvalidBlock),
+                });
+                return Ok(());
+            }
+
             // Generate random number
             let seed = self.env().block_timestamp();
             let mut input: Vec<u8> = Vec::new();
@@ -584,6 +644,8 @@ mod lottery {
         }
 
         /// Override draw
+        /// 
+        /// 1. The operator can override the winning number of the draw during the processed period.
         #[ink(message)]
         pub fn override_draw(&mut self, draw_number: u32,
             winning_number: u16) -> Result<(), Error> {
@@ -632,6 +694,17 @@ mod lottery {
         }        
 
         /// Close draw
+        /// 
+        /// 1. Only the operator can close the draw.
+        /// 2. Only processed draws can be closed.
+        /// 3. The block number must be greater than the lottery starting block plus the
+        ///    draw blocks closing.
+        /// 4. The closing of the draw calls on the following process:
+        ///    4.1. Search for the winners
+        ///    4.2. Calculate the shares of the jackpot and upline percentage.  Only given
+        ///         to upline that bets on the current draw.
+        ///    4.3. Transfer the balance to the bettors and its upline who actively bets
+        ///    4.4. Update the status of the draw.
         #[ink(message)]
         pub fn close_draw(&mut self, draw_number: u32) -> Result<(), ContractError> {
 
@@ -645,7 +718,30 @@ mod lottery {
                 return Ok(());
             } 
 
-            // Check if draw exist
+            // Check if the draw exist
+            let draw = match self.draws.iter().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+
+            // The current block must be greater or equal to the draw closing blocks.
+            let current_block: u32 = self.env().block_number();
+            let draw_closing_blocks: u32 = self.lottery_setup.starting_block + draw.opening_blocks;
+            if draw_closing_blocks > current_block  {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::InvalidBlock),
+                });
+                return Ok(());
+            }  
+
+            // Get draw for editing
             let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
                 Some(d) => d,
                 None => {
@@ -705,13 +801,25 @@ mod lottery {
                         .map_err(|_| RuntimeError::CallRuntimeFailed)?;                
 
                     // Upline
-                    self.env()
-                        .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
-                            id: self.lottery_setup.asset_id,
-                            target: winner.upline.into(),
-                            amount: winner.upline_share,
-                        }))
-                        .map_err(|_| RuntimeError::CallRuntimeFailed)?;                
+                    if draw.bets.iter().find(|b| b.bettor == winner.upline).is_none() {
+                        // If the upline is not actively betting the share will go to the operator
+                        self.env()
+                            .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                                id: self.lottery_setup.asset_id,
+                                target: self.lottery_setup.operator.into(),
+                                amount: winner.upline_share,
+                            }))
+                            .map_err(|_| RuntimeError::CallRuntimeFailed)?;    
+                    } else {
+                        // If the upline is actively betting
+                        self.env()
+                            .call_runtime(&RuntimeCall::Assets(AssetsCall::Transfer {
+                                id: self.lottery_setup.asset_id,
+                                target: winner.upline.into(),
+                                amount: winner.upline_share,
+                            }))
+                            .map_err(|_| RuntimeError::CallRuntimeFailed)?;       
+                    }
                 } 
             }
 
@@ -756,7 +864,6 @@ mod lottery {
             draw.status = DrawStatus::Close;
             draw.is_open = false;
 
-
             self.env().emit_event(LotteryEvent {
                 operator: caller,
                 status: LotteryStatus::EmitSuccess(Success::DrawClosed),
@@ -770,6 +877,16 @@ mod lottery {
         /// All functions related to bets.
         
         /// Add a bet
+        /// 
+        /// 1. Anyone can place a bet on an open draw
+        /// 2. Upon betting the bet amount is already distributed and transferred to the following:
+        ///    2.1. 50% will go to the jackpot where it will be split into the following:
+        ///         2.1.1. Jackpot share is 90%
+        ///         2.1.2. Upline share of the jackpot is 10%
+        ///    2.2. 20% will go to the operator
+        ///    2.3. 10% will go to the developer
+        ///    2.4. 10% will go to the rebate (all bettors)
+        ///    2.5. 10% will go to the affiliate (immediately the active upline will get 10%)
         #[ink(message)]
         pub fn add_bet(&mut self, draw_number: u32, 
             bet_number: u16, 
@@ -779,8 +896,8 @@ mod lottery {
 
             let caller = self.env().caller();
 
-            /// Add bet is called at the server by the operator as soon as tx_hash transfer 
-            /// of bet has been verified.
+            // Add bet is called at the server by the operator as soon as tx_hash transfer 
+            // of bet has been verified.
             if caller != self.lottery_setup.operator {
                 self.env().emit_event(LotteryEvent {
                     operator: self.lottery_setup.operator,
@@ -792,7 +909,16 @@ mod lottery {
             // Find the draw number
             let draw = self.draws.iter()
                 .find(|d| d.draw_number == draw_number)
-                .ok_or(ContractError::Internal(Error::DrawNotFound))?;        /// Logs any message or error in the lottery contract (10 logs max)
+                .ok_or(ContractError::Internal(Error::DrawNotFound))?;        
+
+            // A draw that the status is not open and the flag is false is considered close draw.
+            if draw.status != DrawStatus::Open && !draw.is_open {
+                self.env().emit_event(LotteryEvent {
+                    operator: self.lottery_setup.operator,
+                    status: LotteryStatus::EmitError(Error::DrawClosed),
+                });
+                return Ok(());
+            }
 
             // Shares
             let jackpot_share   = draw.bet_amount * 50 / 100;
@@ -884,7 +1010,7 @@ mod lottery {
         }        
 
         /// Getter functions
-        /// ----------------
+        /// 
         /// These functions returns storage data 
 
         /// Returns lottery setup

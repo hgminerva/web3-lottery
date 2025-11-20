@@ -33,8 +33,8 @@ const storageDepositLimit = null;
 
 /// Setup the lottery
 const asset_id = 1984;
-const startingBlock = 300;
-const dailyTotalBlocks = 100; 
+const startingBlock = 550;
+const dailyTotalBlocks = 10; 
 const maximumDraws = 2;
 const maximumBets = 5;
 
@@ -42,7 +42,6 @@ await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx
     .setup({ storageDepositLimit, gasLimit }, 
       bob.address,      // Operator
-      alice.address,    // Dev
       asset_id,
       startingBlock,
       dailyTotalBlocks,
