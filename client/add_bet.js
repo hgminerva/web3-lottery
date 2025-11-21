@@ -72,7 +72,7 @@ const txHash = await new Promise(async (resolve, reject) => {
 
 /// If successful, record the bet
 const draw_number = 1;
-const bet_number = 123;
+const bet_number = 555;
 const bettor = charlie.address; 
 const upline = bob.address; 
 

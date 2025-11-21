@@ -31,24 +31,16 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-/// Setup the lottery
-const asset_id = 1984;
-const startingBlock = 670;
-const dailyTotalBlocks = 30; 
-const maximumDraws = 2;
-const maximumBets = 5;
+const draw_number = 1;
+const winning_number = 555;
 
 await new Promise(async (resolve, reject) => {
+
   const unsub = await contract.tx
-    .setup({ storageDepositLimit, gasLimit }, 
-      bob.address,      // Operator
-      asset_id,
-      startingBlock,
-      dailyTotalBlocks,
-      maximumDraws,
-      maximumBets,
-    )
-    .signAndSend(alice, ({ status, events, data }) => {
+    .overrideDraw({ storageDepositLimit, gasLimit }, 
+      draw_number,
+      winning_number,
+    ).signAndSend(bob, ({ status, events, dispatchError }) => {    
       console.log("Status:", status?.type);
       if(events?.length > 0) {
         events.forEach(({ event }) => {
@@ -59,7 +51,8 @@ await new Promise(async (resolve, reject) => {
           }
         });
       }
-    });
+  });
+
 });
 
 process.exit(0);

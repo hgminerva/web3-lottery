@@ -4,6 +4,7 @@ import fs from "fs";
 import 'dotenv/config';
 
 import { decode } from "./decode.js";
+import { colors } from "./colors.js";
 
 export async function startLottery(api) {
 
@@ -31,7 +32,7 @@ export async function startLottery(api) {
     const unsub = await contract.tx
       .start({ storageDepositLimit, gasLimit })
       .signAndSend(bob, ({ status, events, dispatchError }) => {
-        console.log("Starting Lottery Status:", status?.type); 
+        console.log(colors.darkGray(`Starting Lottery Status: ${status?.type}`)); 
         if(events?.length > 0) {
           events.forEach(({ event }) => {
             if (event.section === "contracts" && event.method === "ContractEmitted") {

@@ -167,6 +167,8 @@ mod lottery {
         pub lottery_setup: LotterySetup,
         // Multiple draws
         pub draws: Vec<Draw>,
+        // Randomizer salt
+        pub salt: u64,
     }
 
     /// Implementation
@@ -199,6 +201,7 @@ mod lottery {
                     is_started: init_start, 
                 },
                 draws: Vec::new(),
+                salt: 0,
             }
         }
 
@@ -609,16 +612,20 @@ mod lottery {
             }
 
             // Generate random number
+            let max_value: u16 = 999;
             let seed = self.env().block_timestamp();
+
             let mut input: Vec<u8> = Vec::new();
             input.extend_from_slice(&seed.to_be_bytes());
-            input.extend_from_slice(&draw.draw_number.to_be_bytes());
+            input.extend_from_slice(&self.salt.to_be_bytes());
 
             let mut output = <hash::Keccak256 as hash::HashOutput>::Type::default();
             ink::env::hash_bytes::<hash::Keccak256>(&input, &mut output);
 
+            self.salt += 1;
+
             let raw = u16::from_le_bytes([output[0], output[1]]);
-            let random_num = (raw % 999) + 1;
+            let random_num: u16 = (raw % max_value) + 1;
 
             // Close the draw (No one can bet anymore)
             let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
@@ -645,7 +652,7 @@ mod lottery {
 
         /// Override draw
         /// 
-        /// 1. The operator can override the winning number of the draw during the processed period.
+        /// 1. The operator can override the winning number of the draw during the processing period.
         #[ink(message)]
         pub fn override_draw(&mut self, draw_number: u32,
             winning_number: u16) -> Result<(), Error> {
@@ -705,6 +712,8 @@ mod lottery {
         ///         to upline that bets on the current draw.
         ///    4.3. Transfer the balance to the bettors and its upline who actively bets
         ///    4.4. Update the status of the draw.
+        ///    4.5. Delete all bets
+        /// 5. During only this period (closing) the app should display the winning number
         #[ink(message)]
         pub fn close_draw(&mut self, draw_number: u32) -> Result<(), ContractError> {
 
@@ -753,7 +762,7 @@ mod lottery {
                 }
             };
             
-            // Get winners
+            // Get the winners
             let mut winners: Vec<Winner> = draw
                 .bets
                 .iter()
@@ -782,6 +791,7 @@ mod lottery {
                     w.upline_share = upline_share / count_winners;
                 }  
 
+                // Save the winners here
                 draw.winners = winners;           
 
                 // Drop the mutable draw to start the transfer
@@ -821,6 +831,9 @@ mod lottery {
                             .map_err(|_| RuntimeError::CallRuntimeFailed)?;       
                     }
                 } 
+            } else {
+                // If there are no winners in the current draw make sure to clean up the winner array
+                draw.winners = Vec::new();
             }
 
             // Distribute the shares of the rebate to the bettors.
@@ -861,6 +874,15 @@ mod lottery {
                 }
             };
 
+            // Clean the jackpot after we distribute it to the winners of the current draw
+            if draw.winners.len() > 0 {
+                draw.jackpot = 0;
+            }
+            // All rebate will be distributed to all bettors as we close the draw 
+            draw.rebate = 0;
+            // Clean up the bets
+            draw.bets = Vec::new();
+            // Close the draw
             draw.status = DrawStatus::Close;
             draw.is_open = false;
 

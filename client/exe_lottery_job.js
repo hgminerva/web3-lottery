@@ -33,6 +33,8 @@ import { openDraw } from "./open_draw.js";
 import { processDraw } from "./process_draw.js";
 import { closeDraw } from "./close_draw.js";
 
+import { colors } from "./colors.js";
+
 const WS_ENDPOINT = process.env.WS_ENDPOINT;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 
@@ -51,14 +53,7 @@ async function main () {
     let current_block = 0;
     let starting_block = 0;
     let next_starting_block = 0;    
-
-    const colors = {
-        red: (t) => `\x1b[31m${t}\x1b[0m`,
-        green: (t) => `\x1b[32m${t}\x1b[0m`,
-        yellow: (t) => `\x1b[33m${t}\x1b[0m`,
-        purple: (t) => `\x1b[35m${t}\x1b[0m`
-    };    
-
+    
     const unsubscribe = await api.rpc.chain.subscribeNewHeads((header) => {
         console.log(colors.yellow(`Block: #${header.number}`));
 
@@ -103,9 +98,11 @@ async function main () {
                                     console.log(colors.green(`Start: ${event}`));
                                 });
                             }
+
+                            let jackpot = Number(d.jackpot.replace(/,/g, '')) / 1000000; // Token decimal
                             
                             return `[Draw: #${d.drawNumber} (${d.status}, ${d.isOpen}, O:${opening_blocks}, P:${processing_blocks}, C:${closing_blocks}): ` +
-                                `${d.jackpot}USDT (Bets:${d.bets.length})]`;
+                                `Pot:${jackpot}USDT Bets:${d.bets.length} Win#:${d.winningNumber} Winners:${d.winners.length}]`;
                         }).join(", ")
                     ));
                 }); 
