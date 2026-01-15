@@ -31,9 +31,12 @@ const gasLimit = api.registry.createType('WeightV2', {
 });
 const storageDepositLimit = null;
 
-const opening_blocks = 5;
-const processing_blocks = 15;
-const closing_blocks = 25;
+const opening_blocks = 10;
+const processing_blocks = 110;
+const closing_blocks = 120;
+//const opening_blocks = 2700;
+//const processing_blocks = 4500;
+//const closing_blocks = 4800;
 const bet_amount = 500000;  
 
 await new Promise(async (resolve, reject) => {

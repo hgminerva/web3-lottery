@@ -32,7 +32,7 @@ const gasLimit = api.registry.createType('WeightV2', {
 const storageDepositLimit = null;
 
 const draw_number = 1;
-const winning_number = 555;
+const winning_number = 521;
 
 await new Promise(async (resolve, reject) => {
 

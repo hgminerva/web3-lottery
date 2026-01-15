@@ -30,6 +30,8 @@ pub enum Error {
     InvalidBetAmount,
     /// Invalid blocks hierarchy
     InvalidBlocksHierarchy,
+    /// The draw is not yet closed
+    DrawNotClosed,
 }
 
 /// Runtime call execution error

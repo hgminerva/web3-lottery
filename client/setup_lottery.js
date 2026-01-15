@@ -33,10 +33,10 @@ const storageDepositLimit = null;
 
 /// Setup the lottery
 const asset_id = 1984;
-const startingBlock = 670;
-const dailyTotalBlocks = 30; 
+const startingBlock = 55315;
+const dailyTotalBlocks = 7200; // 12 seconds per block 
 const maximumDraws = 2;
-const maximumBets = 5;
+const maximumBets = 1000;
 
 await new Promise(async (resolve, reject) => {
   const unsub = await contract.tx

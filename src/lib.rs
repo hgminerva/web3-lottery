@@ -35,6 +35,7 @@ mod lottery {
         DrawProcessed,
         DrawClosed,
         BetAdded,
+        JackpotAdded,
     }
     
     /// Emit messages
@@ -699,6 +700,57 @@ mod lottery {
             });
             Ok(())
         }        
+
+        /// Add to the draw's jackpot balance
+        /// 
+        /// 1. Make sure to transfer the equivalent asset balance to the contract address
+        /// 2. Can only be called by the operator
+        /// 3. The draw must be closed.
+        #[ink(message)]
+        pub fn add_draw_jackpot(&mut self, draw_number: u32,
+            jackpot: u128) -> Result<(), Error> {
+
+            // Check if operator
+            let caller = self.env().caller();
+            if caller != self.lottery_setup.operator {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
+
+            // Check if draw exist
+            let draw = match self.draws.iter_mut().find(|d| d.draw_number == draw_number) {
+                Some(d) => d,
+                None => {
+                    self.env().emit_event(LotteryEvent {
+                        operator: caller,
+                        status: LotteryStatus::EmitError(Error::DrawNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+
+            // Check if draw status is Close
+            if draw.status == DrawStatus::Close {
+                // Add the transferred value to the existing jackpot
+                draw.jackpot += jackpot;
+            } else {
+                self.env().emit_event(LotteryEvent {
+                    operator: caller,
+                    status: LotteryStatus::EmitError(Error::DrawNotClosed),
+                });
+                return Ok(());
+            }
+
+            self.env().emit_event(LotteryEvent {
+                operator: caller,
+                status: LotteryStatus::EmitSuccess(Success::JackpotAdded),
+            });
+
+            Ok(())
+        }
 
         /// Close draw
         /// 
